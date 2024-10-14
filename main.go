@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"io"
 	"net"
@@ -38,6 +39,39 @@ func init() {
 	githubClient = github.NewClient(transport.Client())
 }
 
+// Get ext https://raw.githubusercontent.com/iamkuper/amnezia-discord-config/refs/heads/main/configs/all.subnets.txt
+func include(dataMap map[string][]*net.IPNet) ([]string, error) {
+	/* 	response, err := http.Get(downloadURL)
+	   	if err != nil {
+	   		return err
+	   	}
+	   	defer response.Body.Close() */
+	var includedCodes []string
+	files, err := os.ReadDir("./data")
+	for _, file := range files {
+		read, err := os.Open("./data/" + file.Name())
+		if err != nil {
+			return nil, err
+		}
+		defer read.Close()
+
+		code := strings.TrimSuffix(file.Name(), ".txt")
+		includedCodes = append(includedCodes, code)
+
+		scanner := bufio.NewScanner(read)
+		for scanner.Scan() {
+			line := scanner.Text()
+			_, ipNet, err := net.ParseCIDR(line)
+			if err != nil {
+				return nil, err
+			}
+			dataMap[code] = append(dataMap[code], ipNet)
+		}
+	}
+	return includedCodes, err
+}
+
+// Fetch ip data release info from source repos
 func fetch(from string) (*github.RepositoryRelease, error) {
 	fixedRelease := os.Getenv("FIXED_RELEASE")
 	names := strings.SplitN(from, "/", 2)
@@ -111,24 +145,7 @@ func newWriter(metadata maxminddb.Metadata, codes []string) (*mmdbwriter.Tree, e
 	})
 }
 
-func open(path string, codes []string) (*mmdbwriter.Tree, error) {
-	reader, err := maxminddb.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	if reader.Metadata.DatabaseType != "sing-geoip" {
-		return nil, E.New("invalid sing-geoip database")
-	}
-	reader.Close()
-
-	return mmdbwriter.Load(path, mmdbwriter.Options{
-		Languages: append(reader.Metadata.Languages, common.Filter(codes, func(it string) bool {
-			return !common.Contains(reader.Metadata.Languages, it)
-		})...),
-		Inserter: inserter.ReplaceWith,
-	})
-}
-
+// Generate geoip.db file
 func write(writer *mmdbwriter.Tree, dataMap map[string][]*net.IPNet, output string, codes []string) error {
 	if len(codes) == 0 {
 		codes = make([]string, 0, len(dataMap))
@@ -137,6 +154,7 @@ func write(writer *mmdbwriter.Tree, dataMap map[string][]*net.IPNet, output stri
 		}
 	}
 	sort.Strings(codes)
+
 	codeMap := make(map[string]bool)
 	for _, code := range codes {
 		codeMap[code] = true
@@ -166,6 +184,7 @@ func release(source string, destination string, output string, ruleSetOutput str
 	if err != nil {
 		return err
 	}
+
 	destinationRelease, err := fetch(destination)
 	if err != nil {
 		log.Warn("missing destination latest release")
@@ -176,19 +195,33 @@ func release(source string, destination string, output string, ruleSetOutput str
 			return nil
 		}
 	}
+
+	// Download ip data from repos release
 	binary, err := download(sourceRelease)
 	if err != nil {
 		return err
 	}
+
+	// metaData ?? countryMap - list of counry codes with ip addresses
 	metadata, countryMap, err := parse(binary)
 	if err != nil {
 		return err
 	}
+
+	// Впиливаемся тут
+	includedCodes, err := include(countryMap)
+	if err != nil {
+		return err
+	}
+
+	// Get all Country codes
 	allCodes := make([]string, 0, len(countryMap))
 	for code := range countryMap {
 		allCodes = append(allCodes, code)
 	}
+	allCodes = append(allCodes, includedCodes...)
 
+	// Writting geoip.db file
 	writer, err := newWriter(metadata, allCodes)
 	if err != nil {
 		return err
@@ -198,20 +231,25 @@ func release(source string, destination string, output string, ruleSetOutput str
 		return err
 	}
 
-	writer, err = newWriter(metadata, []string{"cn"})
-	if err != nil {
-		return err
-	}
-	err = write(writer, countryMap, "geoip-cn.db", []string{"cn"})
+	// Trancated variant
+	writer, err = newWriter(metadata, []string{"ru", "nl", "de", "fr", "us"})
 	if err != nil {
 		return err
 	}
 
+	err = write(writer, countryMap, "geoip-truncated.db", append([]string{"ru", "nl", "de", "fr", "us"}, includedCodes...))
+	if err != nil {
+		return err
+	}
+
+	// Clear rule-set branch
 	os.RemoveAll(ruleSetOutput)
 	err = os.MkdirAll(ruleSetOutput, 0o755)
 	if err != nil {
 		return err
 	}
+
+	// Write rule-set
 	for countryCode, ipNets := range countryMap {
 		var headlessRule option.DefaultHeadlessRule
 		headlessRule.IPCIDR = make([]string, 0, len(ipNets))
@@ -231,12 +269,11 @@ func release(source string, destination string, output string, ruleSetOutput str
 		if err != nil {
 			return err
 		}
+		defer outputRuleSet.Close()
 		err = srs.Write(outputRuleSet, plainRuleSet)
 		if err != nil {
-			outputRuleSet.Close()
 			return err
 		}
-		outputRuleSet.Close()
 	}
 
 	setActionOutput("tag", *sourceRelease.Name)
@@ -248,7 +285,7 @@ func setActionOutput(name string, content string) {
 }
 
 func main() {
-	err := release("Dreamacro/maxmind-geoip", "sagernet/sing-geoip", "geoip.db", "rule-set")
+	err := release("Dreamacro/maxmind-geoip", "MYffffff/sing-geoip", "geoip.db", "rule-set")
 	if err != nil {
 		log.Fatal(err)
 	}
