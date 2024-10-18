@@ -195,11 +195,13 @@ func release(source string, input string, output string, ruleSetOutput string) e
 		err    error
 	)
 	if len(input) != 0 {
+		log.Info("Local mmdb database")
 		binary, err = readFile(input)
 		if err != nil {
 			return err
 		}
 	} else {
+		log.Info("Remote mmdb database")
 		sourceRelease, err := fetch(source)
 		if err != nil {
 			return err
@@ -236,17 +238,6 @@ func release(source string, input string, output string, ruleSetOutput string) e
 		return err
 	}
 	err = write(writer, countryMap, output, nil)
-	if err != nil {
-		return err
-	}
-
-	// Trancated variant
-	writer, err = newWriter(metadata, []string{"ru", "nl", "de", "fr", "en"})
-	if err != nil {
-		return err
-	}
-
-	err = write(writer, countryMap, "geoip-truncated.db", append([]string{"ru", "nl", "de", "fr", "en"}, includedCodes...))
 	if err != nil {
 		return err
 	}
