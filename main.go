@@ -283,6 +283,7 @@ func main() {
 	geoOut := flag.String("geofile", "geoip.db", "geoOut")
 	geoInput := flag.String("inputfile", "", "geoInput")
 	ruleSetOutput := flag.String("srsdir", "sing-ip", "ruleSetOutput")
+	flag.Parse()
 
 	err := release(*source, *geoInput, *geoOut, *ruleSetOutput)
 	if err != nil {
