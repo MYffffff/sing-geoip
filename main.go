@@ -41,16 +41,11 @@ func init() {
 }
 
 // Get ext https://raw.githubusercontent.com/iamkuper/amnezia-discord-config/refs/heads/main/configs/all.subnets.txt
-func include(dataMap map[string][]*net.IPNet) ([]string, error) {
-	/* 	response, err := http.Get(downloadURL)
-	   	if err != nil {
-	   		return err
-	   	}
-	   	defer response.Body.Close() */
+func include(dataMap map[string][]*net.IPNet, inputPath string) ([]string, error) {
 	var includedCodes []string
-	files, err := os.ReadDir("./data")
+	files, err := os.ReadDir(inputPath)
 	for _, file := range files {
-		read, err := os.Open("./data/" + file.Name())
+		read, err := os.Open(inputPath + file.Name())
 		if err != nil {
 			return nil, err
 		}
@@ -189,7 +184,7 @@ func write(writer *mmdbwriter.Tree, dataMap map[string][]*net.IPNet, output stri
 	return err
 }
 
-func release(source string, input string, output string, ruleSetOutput string) error {
+func release(source string, input string, inputDir string, output string, ruleSetOutput string) error {
 	var (
 		binary []byte
 		err    error
@@ -220,7 +215,7 @@ func release(source string, input string, output string, ruleSetOutput string) e
 	}
 
 	// Впиливаемся тут
-	includedCodes, err := include(countryMap)
+	includedCodes, err := include(countryMap, inputDir)
 	if err != nil {
 		return err
 	}
@@ -282,10 +277,11 @@ func main() {
 	source := flag.String("source", "Dreamacro/maxmind-geoip", "source")
 	geoOut := flag.String("geofile", "geoip.db", "geoOut")
 	geoInput := flag.String("inputfile", "", "geoInput")
+	includeInputdir := flag.String("inputdir", "./data", "includeInputdir")
 	ruleSetOutput := flag.String("srsdir", "sing-ip", "ruleSetOutput")
 	flag.Parse()
 
-	err := release(*source, *geoInput, *geoOut, *ruleSetOutput)
+	err := release(*source, *geoInput, *includeInputdir, *geoOut, *ruleSetOutput)
 	if err != nil {
 		log.Fatal(err)
 	}
