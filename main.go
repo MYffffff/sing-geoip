@@ -45,7 +45,7 @@ func include(dataMap map[string][]*net.IPNet, inputPath string) ([]string, error
 	var includedCodes []string
 	files, err := os.ReadDir(inputPath)
 	for _, file := range files {
-		read, err := os.Open(inputPath + file.Name())
+		read, err := os.Open(filepath.Join(inputPath, file.Name()))
 		if err != nil {
 			return nil, err
 		}
