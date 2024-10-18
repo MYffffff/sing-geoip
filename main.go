@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"flag"
 	"io"
 	"net"
 	"net/http"
@@ -110,6 +111,15 @@ func download(release *github.RepositoryRelease) ([]byte, error) {
 	return get(geoipAsset.BrowserDownloadURL)
 }
 
+// Open existing .dat file
+func readFile(inputPath string) ([]byte, error) {
+	data, err := os.ReadFile(inputPath)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
 func parse(binary []byte) (metadata maxminddb.Metadata, countryMap map[string][]*net.IPNet, err error) {
 	database, err := maxminddb.FromBytes(binary)
 	if err != nil {
@@ -179,27 +189,26 @@ func write(writer *mmdbwriter.Tree, dataMap map[string][]*net.IPNet, output stri
 	return err
 }
 
-func release(source string, destination string, output string, ruleSetOutput string) error {
-	sourceRelease, err := fetch(source)
-	if err != nil {
-		return err
-	}
-
-	destinationRelease, err := fetch(destination)
-	if err != nil {
-		log.Warn("missing destination latest release")
-	} else {
-		if os.Getenv("NO_SKIP") != "true" && strings.Contains(*destinationRelease.Name, *sourceRelease.Name) {
-			log.Info("already latest")
-			setActionOutput("skip", "true")
-			return nil
+func release(source string, input string, output string, ruleSetOutput string) error {
+	var (
+		binary []byte
+		err    error
+	)
+	if len(input) != 0 {
+		binary, err = readFile(input)
+		if err != nil {
+			return err
 		}
-	}
-
-	// Download ip data from repos release
-	binary, err := download(sourceRelease)
-	if err != nil {
-		return err
+	} else {
+		sourceRelease, err := fetch(source)
+		if err != nil {
+			return err
+		}
+		// Download ip data from repos release
+		binary, err = download(sourceRelease)
+		if err != nil {
+			return err
+		}
 	}
 
 	// metaData ?? countryMap - list of counry codes with ip addresses
@@ -232,12 +241,12 @@ func release(source string, destination string, output string, ruleSetOutput str
 	}
 
 	// Trancated variant
-	writer, err = newWriter(metadata, []string{"ru", "nl", "de", "fr", "us"})
+	writer, err = newWriter(metadata, []string{"ru", "nl", "de", "fr", "en"})
 	if err != nil {
 		return err
 	}
 
-	err = write(writer, countryMap, "geoip-truncated.db", append([]string{"ru", "nl", "de", "fr", "us"}, includedCodes...))
+	err = write(writer, countryMap, "geoip-truncated.db", append([]string{"ru", "nl", "de", "fr", "en"}, includedCodes...))
 	if err != nil {
 		return err
 	}
@@ -275,17 +284,16 @@ func release(source string, destination string, output string, ruleSetOutput str
 			return err
 		}
 	}
-
-	setActionOutput("tag", *sourceRelease.Name)
 	return nil
 }
 
-func setActionOutput(name string, content string) {
-	os.Stdout.WriteString("::set-output name=" + name + "::" + content + "\n")
-}
-
 func main() {
-	err := release("Dreamacro/maxmind-geoip", "MYffffff/sing-geoip", "geoip.db", "rule-set")
+	source := flag.String("source", "Dreamacro/maxmind-geoip", "source")
+	geoOut := flag.String("geofile", "geoip.db", "geoOut")
+	geoInput := flag.String("inputfile", "", "geoInput")
+	ruleSetOutput := flag.String("srsdir", "sing-ip", "ruleSetOutput")
+
+	err := release(*source, *geoInput, *geoOut, *ruleSetOutput)
 	if err != nil {
 		log.Fatal(err)
 	}
